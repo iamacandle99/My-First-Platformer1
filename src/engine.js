@@ -5,10 +5,10 @@
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 
-export let scene, camera, renderer;
+export const scene = new THREE.Scene();
+export let camera, renderer;
 
 export function initializeEngine() {
-    scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
     renderer = new THREE.WebGLRenderer({ antialias: true });
     
@@ -17,6 +17,9 @@ export function initializeEngine() {
     document.body.appendChild(renderer.domElement);
 
     camera.position.z = 20;
+
+    // Background color for void depth
+    scene.background = new THREE.Color(0x000005);
 
     // Lighting for planets
     const ambientLight = new THREE.AmbientLight(0x404040, 2);

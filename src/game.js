@@ -3,10 +3,10 @@
  * Orchestrates all game systems: engine, sprites, background, controls
  */
 
-import { initializeEngine, handleResize, render } from './engine.js';
+import { initializeEngine, handleResize, render, THREE } from './engine.js';
 import { levelThemes, gameSettings } from './design.js';
-import { HarvestStar, playerGroup, bhMaterial, getMass, resetPlayerState, setGameState } from './sprite.js';
-import { createPlanet, clearPlanets, updatePlanets } from './background.js';
+import { HarvestStar, playerGroup, bhMaterial, discMaterial, getMass, resetPlayerState, setGameState } from './sprite.js';
+import { createPlanet, clearPlanets, updatePlanets, createStarfield } from './background.js';
 import { initializeControls, handleMovement } from './controls.js';
 
 /** 
@@ -29,7 +29,9 @@ function initLevel() {
     document.getElementById('goal').innerText = goal;
     
     // Change Black Hole color based on level
-    bhMaterial.uniforms.bhColor.value = new THREE.Color(theme.color);
+    const newColor = new THREE.Color(theme.color);
+    bhMaterial.uniforms.bhColor.value = newColor;
+    discMaterial.color = newColor;
 
     for(let i = 0; i < theme.planetCount; i++) {
         createPlanet(theme);
@@ -61,7 +63,12 @@ function animate() {
 
     // Update stars
     if (Math.random() < gameSettings.harvestStarSpawnThreshold + (level * 0.01)) {
-        const newStar = new HarvestStar();
+        let type = 'normal';
+        const rand = Math.random();
+        if (rand < 0.05) type = 'mass';      // 5% red
+        else if (rand < 0.15) type = 'speed'; // 10% blue
+        
+        const newStar = new HarvestStar(type);
         stars.push(newStar);
     }
 
@@ -84,12 +91,10 @@ function animate() {
     render();
 }
 
-// Import THREE for shader material
-import { THREE } from './engine.js';
-
 // Start game
 initializeEngine();
 initializeControls();
+createStarfield();
 initLevel();
 animate();
 

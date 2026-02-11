@@ -45,37 +45,77 @@ export const bhMaterial = new THREE.ShaderMaterial({
         uniform vec3 bhColor;
         void main() {
             float dist = distance(vUv, vec2(0.5));
-            float ring = smoothstep(0.48, 0.5, dist) - smoothstep(0.5, 0.52, dist);
-            float core = smoothstep(0.35, 0.3, dist);
             
-            vec3 finalColor = bhColor * ring * 2.0;
-            if (dist < 0.3) finalColor = vec3(0.0); // The Singularity
+            // Accretion disk glow
+            float glow = 0.05 / pow(dist, 1.5);
+            glow = clamp(glow, 0.0, 1.0);
             
-            float alpha = (dist < 0.3) ? 1.0 : ring;
-            gl_FragColor = vec4(finalColor, alpha);
+            // Event horizon ring
+            float ring = smoothstep(0.45, 0.46, dist) - smoothstep(0.46, 0.48, dist);
+            
+            vec3 color = bhColor * glow * 2.0;
+            color += bhColor * ring * 4.0;
+            
+            if (dist < 0.3) color = vec3(0.0); // The Singularity
+            
+            float alpha = (dist < 0.3) ? 1.0 : (glow + ring);
+            gl_FragColor = vec4(color, alpha);
         }
     `,
     transparent: true
 });
 
-const bhMesh = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), bhMaterial);
+const bhMesh = new THREE.Mesh(new THREE.SphereGeometry(1.5, 32, 32), bhMaterial);
 playerGroup.add(bhMesh);
+
+// Add an accretion disc for 3D look
+const discGeometry = new THREE.TorusGeometry(2.2, 0.02, 16, 100);
+export const discMaterial = new THREE.MeshBasicMaterial({ 
+    color: 0x00d2ff, 
+    transparent: true, 
+    opacity: 0.7 
+});
+const disc = new THREE.Mesh(discGeometry, discMaterial);
+disc.rotation.x = Math.PI / 2.1;
+playerGroup.add(disc);
 
 /**
  * HARVEST STAR - The "Food"
  */
 export class HarvestStar {
-    constructor() {
-        const geometry = new THREE.SphereGeometry(0.15, 8, 8);
-        const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    constructor(type = 'normal') {
+        this.type = type;
+        const geometry = new THREE.SphereGeometry(0.2, 8, 8);
+        
+        let color = 0xffffff;
+        if (type === 'speed') color = 0x00ffff; // Blue
+        if (type === 'mass') color = 0xff0000;  // Red
+        
+        const material = new THREE.MeshBasicMaterial({ 
+            color: color,
+            transparent: true,
+            opacity: 0.9 
+        });
         this.mesh = new THREE.Mesh(geometry, material);
+
+        // Add glow for powerups
+        if (type !== 'normal') {
+            const glowGeo = new THREE.SphereGeometry(0.4, 8, 8);
+            const glowMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.3 });
+            this.mesh.add(new THREE.Mesh(glowGeo, glowMat));
+        }
         
-        // Random spawn outside view
+        // Random spawn outside view relative to player
         const angle = Math.random() * Math.PI * 2;
-        const dist = 30;
-        this.mesh.position.set(Math.cos(angle) * dist, Math.sin(angle) * dist, 0);
+        const dist = 35;
+        const playerPos = playerGroup.position;
+        this.mesh.position.set(
+            playerPos.x + Math.cos(angle) * dist, 
+            playerPos.y + Math.sin(angle) * dist, 
+            0
+        );
         
-        // Give them initial orbital velocity
+        // Give them initial orbital velocity relative to player heading
         this.vel = new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0)
             .multiplyScalar(0.1 + (level * 0.05));
         scene.add(this.mesh);
@@ -85,13 +125,17 @@ export class HarvestStar {
         // Gravity logic
         const diff = new THREE.Vector3().subVectors(playerGroup.position, this.mesh.position);
         const distance = diff.length();
-        const force = 0.1 / (distance * distance); // Newtonish
+        
+        // Increase pull for powerups
+        const forceMultiplier = (this.type !== 'normal') ? 0.3 : 0.1;
+        const force = forceMultiplier / (distance * distance); 
         
         this.vel.add(diff.normalize().multiplyScalar(force));
         this.mesh.position.add(this.vel);
 
-        // Check collection
-        if (distance < gameSettings.collectionRadius * (mass / 2)) {
+        // Check collection - Based on actual black hole horizon
+        const bhRadius = 1.3 * playerGroup.scale.x; 
+        if (distance < bhRadius) {
             this.collect();
             return true;
         }
@@ -104,7 +148,17 @@ export class HarvestStar {
     }
 
     collect() {
-        mass += gameSettings.harvestStarMassReward;
+        if (this.type === 'normal') {
+            mass += gameSettings.harvestStarMassReward;
+        } else if (this.type === 'mass') {
+            mass += gameSettings.harvestStarMassReward * 5; // Big boost
+            showNotification("MASSIVE COLLISION!");
+        } else if (this.type === 'speed') {
+            mass += gameSettings.harvestStarMassReward;
+            activateSpeedBoost();
+            showNotification("SINGULARITY ACCELERATED!");
+        }
+
         scene.remove(this.mesh);
         document.getElementById('mass').innerText = mass.toFixed(2);
         
@@ -114,6 +168,28 @@ export class HarvestStar {
         
         return mass >= goal;
     }
+}
+
+function showNotification(text) {
+    const msg = document.getElementById('msg');
+    const originalText = msg.innerHTML;
+    msg.innerHTML = text;
+    msg.style.display = 'block';
+    msg.style.fontSize = '1.5em';
+    setTimeout(() => { 
+        msg.style.display = 'none'; 
+        msg.innerHTML = originalText;
+        msg.style.fontSize = '2em';
+    }, 1500);
+}
+
+let boostTimer = null;
+function activateSpeedBoost() {
+    gameSettings.acceleration = 0.03; // Triple speed
+    if (boostTimer) clearTimeout(boostTimer);
+    boostTimer = setTimeout(() => {
+        gameSettings.acceleration = 0.01; // Back to normal
+    }, 5000);
 }
 
 export function resetPlayerState() {
